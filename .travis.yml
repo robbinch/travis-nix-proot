@@ -2,7 +2,10 @@ sudo: false
 language: c
 
 install:
+  # check install script works
   - bash <(curl -sSL https://github.com/robbinch/travis-nix-proot/raw/master/install)
+  # overwrite installed script
+  - install travis-nix-proot $HOME/.travis-nix-proot/bin/
   - export PATH=$HOME/.travis-nix-proot/bin:$PATH
   - travis-nix-proot setup
 
