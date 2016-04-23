@@ -20,7 +20,7 @@ language: c
 
 install:
   # Install travis-nix-proot into $HOME/.travis-nix-proot directory
-  - bash <(curl -sSL https://github.com/robbinch/travis-nix-proot/raw/master/install-travis-nix-proot)
+  - bash <(curl -sSL https://github.com/robbinch/travis-nix-proot/raw/master/install)
 
   # Setup PATH
   - export PATH=$HOME/.travis-nix-proot/bin:$PATH
