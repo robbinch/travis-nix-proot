@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+RCDIR=".travis-nix-proot"
+HOME_RCDIR="$HOME/$RCDIR"
+ROOTFS="$HOME/travis-nix-proot.rootfs"
+CACHE="$HOME/travis-nix-proot.cache"
+
+SCRIPT=`basename $0`
+PROOT_BIN="$HOME_RCDIR/bin/proot"
+PROOT="$PROOT_BIN -R / -b $HOME_RCDIR:/$RCDIR -b $ROOTFS/nix:/nix -b $ROOTFS/etc/nix:/etc/nix -b $CACHE/nix/store:/nix/store -b $CACHE/nix/var/nix/profiles:/nix/var/nix/profiles -b $CACHE/reginfo:/reginfo -0"
+HOME_SCRIPT="$HOME_RCDIR/bin/$SCRIPT"
+PROOT_SELF="$PROOT /$RCDIR/bin/$SCRIPT"
+
+FORCE_REBUILD=${FORCE_REBUILD:-0}
+PROFILE_NIX=$HOME/.nix-profile/etc/profile.d/nix.sh
+NIXBIN=$HOME/.nix-profile/bin
+REGINFO=/reginfo/reginfo
+
+setup_proot () {
+  if [ ! -f "$PROOT_BIN" ]; then
+    echo "Downloading proot"
+    mkdir -p "$HOME_RCDIR/bin"
+    ARCH=$(if [ `uname -m` = x86_64 ]; then echo x86_64; else echo x86; fi)
+    curl -o "$PROOT_BIN" -L http://static.proot.me/proot-"$ARCH"
+    chmod +x "$PROOT_BIN"
+  fi
+}
+
+setup () {
+  setup_proot
+  mkdir -p "$ROOTFS"/nix "$ROOTFS"/etc/nix "$CACHE/nix/store" "$CACHE/nix/var/nix/profiles" "$CACHE/reginfo"
+  test ! -f "$HOME_SCRIPT" && ln -f "$0" "$HOME_SCRIPT"
+  $PROOT_SELF _setup_nix
+}
+
+_setup_etc_nix () {
+  NIX_CONF="/etc/nix/nix.conf"
+  test ! -f "$NIX_CONF" && (
+    echo "Creating $NIX_CONF"
+    echo 'build-users-group =' >> "$NIX_CONF"
+    echo 'build-max-jobs = 4' >> "$NIX_CONF"
+  )
+}
+
+_restore_db () {
+  if [ "$REBUILD_NIX" != 1 ] && [ -f "$REGINFO" ]; then
+    echo "Restoring Nix db"
+    nix-store --load-db < "$REGINFO"
+  fi
+}
+
+_setup_nix () {
+  export LC_ALL=C
+  export LC_CTYPE=C
+  export LANG=C
+
+  _setup_etc_nix
+  if [ "$FORCE_REBUILD" != 1 ] && [ -f "$REGINFO" ]; then
+    echo "Using cached Nix store"
+    ln -s /nix/var/nix/profiles/default $HOME/.nix-profile
+    mkdir -p $HOME/.nix-defexpr
+    ln -s /nix/var/nix/profiles/per-user/root/channels $HOME/.nix-defexpr/
+    source "$PROFILE_NIX"
+    _restore_db
+    nix-channel --add https://nixos.org/channels/nixpkgs-unstable
+    nix-channel --update
+  else
+    echo "Installing Nix"
+    bash <(curl -sSL https://nixos.org/nix/install)
+  fi
+}
+
+check_nix_installed () {
+  if [ ! -d "$ROOTFS/nix/var/nix/db" ]; then
+    echo "travis-nix-proot has not been setup. Running $0 setup."
+    $0 setup || (echo "travis-nix-proot setup failed."; exit 1)
+  fi
+}
+
+if [ -z "$1" ]; then
+  cat <<EOF
+Usage: $0 <command>
+    setup
+        Setup Nix environment for subsequent usage
+
+    gc
+        Run nix-collect-garbage -d in Nix environment
+
+    dump-db
+        Exports Nix environment DB (so setup can reuse it)
+
+    _setup_nix
+        Internal command used by setup to create actual Nix environment
+
+    (anything else)
+        Runs command under Nix environment
+EOF
+  exit 1
+fi
+
+case "$1" in
+  setup)
+    setup
+    ;;
+  _setup_nix)
+    _setup_nix
+    ;;
+  gc)
+    $0 nix-collect-garbage -d
+    ;;
+  dump-db)
+    $0 nix-store --dump-db > "$CACHE/reginfo/reginfo"
+    ;;
+  *)
+    check_nix_installed
+    exec $PROOT bash -c "source $PROFILE_NIX; $*"
+    ;;
+esac

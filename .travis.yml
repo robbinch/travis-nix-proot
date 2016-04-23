@@ -1,0 +1,19 @@
+sudo: false
+language: c
+
+install:
+  - bash <(curl -sSL https://github.com/robbinch/travis-nix-proot/raw/master/install-travis-nix-proot)
+  - export PATH=$HOME/.travis-nix-proot/bin:$PATH
+  - travis-nix-proot setup
+
+script:
+  - travis-nix-proot nix-env -i bats
+  - travis-nix-proot bats test.sh
+
+before_cache:
+  - travis-nix-proot gc
+  - travis-nix-proot dump-db
+
+cache:
+  directories:
+    - $HOME/travis-nix-proot.cache
