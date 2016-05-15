@@ -77,6 +77,10 @@ check_nix_installed () {
   fi
 }
 
+echo | sudo ls
+echo "sudo: returned $?"
+exit 1
+
 if [ -z "$1" ]; then
   cat <<EOF
 Usage: $0 <command>
